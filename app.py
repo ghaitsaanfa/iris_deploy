@@ -3,40 +3,46 @@ import pandas as pd
 import numpy as np
 import joblib
 from sklearn.datasets import load_iris
-import seaborn as sns
 import matplotlib.pyplot as plt
+import seaborn as sns
 
-# Load model and data
-model = joblib.load('naive_bayes_model.pkl')
+# Load iris dataset
 iris = load_iris()
-df = pd.DataFrame(iris.data, columns=iris.feature_names)
-df['target'] = iris.target
-df['target_name'] = df['target'].apply(lambda x: iris.target_names[x])
+feature_names = iris.feature_names
+target_names = iris.target_names
+df = pd.DataFrame(iris.data, columns=feature_names)
+df['species'] = [target_names[i] for i in iris.target]
+
+# Load trained model
+model = joblib.load("naive_bayes_model.pkl")
 
 # Sidebar navigation
-page = st.sidebar.selectbox("Select a page", ["Data Description", "Prediction", "About"])
+page = st.sidebar.selectbox("Select Page", ["Data Description", "Prediction", "About"])
 
-# Page: Data Description
+# Page 1: Data Description
 if page == "Data Description":
     st.title("🌸 Iris Dataset Description")
-    st.write("This dataset contains measurements of iris flowers.")
+    st.write("Dataset containing measurements of iris flowers and their species.")
+
+    st.subheader("Data Sample")
     st.dataframe(df.head())
 
-    st.subheader("Class Distribution")
-    st.bar_chart(df['target_name'].value_counts())
+    st.subheader("Species Distribution")
+    st.bar_chart(df['species'].value_counts())
 
     st.subheader("Feature Correlation")
-    corr = df.iloc[:, :4].corr()
     fig, ax = plt.subplots()
-    sns.heatmap(corr, annot=True, cmap="coolwarm", ax=ax)
+    sns.heatmap(df[feature_names].corr(), annot=True, cmap="coolwarm", ax=ax)
     st.pyplot(fig)
 
-# Page: Prediction
+# Page 2: Prediction
 elif page == "Prediction":
-    st.title("🔍 Iris Species Prediction")
+    st.title("🔮 Predict Iris Species")
+
+    st.write("Input the flower measurements below:")
 
     sepal_length = st.slider("Sepal Length (cm)", 4.0, 8.0, 5.1)
-    sepal_width = st.slider("Sepal Width (cm)", 2.0, 4.5, 3.5)
+    sepal_width = st.slider("Sepal Width (cm)", 2.0, 4.5, 3.0)
     petal_length = st.slider("Petal Length (cm)", 1.0, 7.0, 1.4)
     petal_width = st.slider("Petal Width (cm)", 0.1, 2.5, 0.2)
 
@@ -44,18 +50,22 @@ elif page == "Prediction":
 
     if st.button("Predict"):
         prediction = model.predict(input_data)[0]
-        predicted_class = iris.target_names[prediction]
-        st.success(f"The predicted species is: **{predicted_class}** 🌺")
+        st.success(f"The predicted species is: **{target_names[prediction]}** 🌺")
 
-# Page: About
+# Page 3: About
 elif page == "About":
     st.title("📘 About this App")
     st.write("""
-        - **Model**: Naive Bayes (GaussianNB)
-        - **Data**: Iris Flower Dataset from scikit-learn
-        - **App**: Built with Streamlit
-        - **Created by**: [Your Name]
+        This Streamlit web app is built to demonstrate classification of iris flowers using a Naive Bayes model.
+        
+        **Features:**
+        - Explore the Iris dataset
+        - Make real-time predictions
+        - Learn more about the project
+
+        **Model**: Gaussian Naive Bayes  
+        **Library**: scikit-learn  
+        **UI**: Streamlit
     """)
     st.markdown("---")
-    st.write("Feel free to customize this app or extend it with more features!")
-
+    st.write("Made with ❤️ using Python and Streamlit.")

@@ -7,7 +7,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 # Load model and data
-model = joblib.load('model.pkl')
+model = joblib.load('naive_bayes_model.pkl')
 iris = load_iris()
 df = pd.DataFrame(iris.data, columns=iris.feature_names)
 df['target'] = iris.target

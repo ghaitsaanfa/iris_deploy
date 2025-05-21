@@ -1,12 +1,13 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import joblib # Untuk memuat model .pkl
+import joblib
 from sklearn.datasets import load_iris
-from sklearn.naive_bayes import GaussianNB # Sebagai fallback jika model.pkl tidak ditemukan
+from sklearn.naive_bayes import GaussianNB
 from sklearn.metrics import accuracy_score
 import matplotlib.pyplot as plt
 import seaborn as sns
+import os # Untuk path absolut
 
 # --- Global Configuration ---
 st.set_page_config(
@@ -17,9 +18,8 @@ st.set_page_config(
 )
 
 # --- Data Loading (Cached) ---
-@st.cache_data # Cache data loading
+@st.cache_data
 def load_data_iris():
-    """Loads the Iris dataset and returns data object, DataFrame, feature names, and target names."""
     iris = load_iris()
     feature_names = iris.feature_names
     target_names = iris.target_names
@@ -28,43 +28,62 @@ def load_data_iris():
     df['species_name'] = df['species_id'].apply(lambda x: target_names[x])
     return iris, df, feature_names, target_names
 
-# --- Model Loading (Cached) ---
-@st.cache_resource # Cache model object
-def load_custom_model(model_path="naive_bayes_model.pkl"):
-    """Loads a pre-trained model from a .pkl file."""
-    try:
-        model = joblib.load(model_path)
-        st.sidebar.success(f"✔️ Model '{model_path}' berhasil dimuat.")
-        return model
-    except FileNotFoundError:
-        st.sidebar.error(f"⚠️ File model '{model_path}' tidak ditemukan!")
-        st.sidebar.warning("Menggunakan model Naive Bayes default yang dilatih saat ini.")
-        # Fallback: latih model baru jika file .pkl tidak ditemukan
-        iris_temp, _, _, _ = load_data_iris()
-        X_temp = iris_temp.data
-        y_temp = iris_temp.target
-        fallback_model = GaussianNB()
-        fallback_model.fit(X_temp, y_temp)
-        return fallback_model
-    except Exception as e:
-        st.sidebar.error(f"❌ Error saat memuat model: {e}")
-        st.sidebar.warning("Menggunakan model Naive Bayes default yang dilatih saat ini.")
-        iris_temp, _, _, _ = load_data_iris()
-        X_temp = iris_temp.data
-        y_temp = iris_temp.target
-        fallback_model = GaussianNB()
-        fallback_model.fit(X_temp, y_temp)
-        return fallback_model
+# --- Model Loading with st.status (Cached) ---
+@st.cache_resource
+def load_model_with_status(model_path="naive_bayes_model.pkl"):
+    """Loads a pre-trained model or falls back to a default one, using st.status for UI."""
+    model = load_model_with_status("naive_bayes_model.pkl")
+    iris_data_for_fallback, _, _, _ = load_data_iris() # Muat data jika butuh fallback
+
+    # Inisialisasi session state jika belum ada
+    if 'model_load_message' not in st.session_state:
+        st.session_state.model_load_message = "Status pemuatan model belum diketahui."
+    if 'model_type_loaded' not in st.session_state:
+        st.session_state.model_type_loaded = "unknown" # 'custom', 'default_not_found', 'default_error'
+
+    with st.status(f"Mencoba memuat model '{model_path}'...", expanded=True) as status_ui:
+        try:
+            abs_model_path = os.path.abspath(model_path)
+            st.write(f"Mencari model di: {abs_model_path}")
+            if not os.path.exists(abs_model_path):
+                raise FileNotFoundError(f"File model tidak ditemukan di {abs_model_path}")
+
+            model = joblib.load(abs_model_path)
+            st.session_state.model_load_message = f"✔️ Model kustom '{model_path}' berhasil dimuat."
+            st.session_state.model_type_loaded = "custom"
+            status_ui.update(label=st.session_state.model_load_message, state="complete", expanded=False)
+
+        except FileNotFoundError as fnf_err:
+            st.write(f"Error: {fnf_err}. Melatih model Naive Bayes default sebagai fallback.")
+            fallback_model = GaussianNB()
+            fallback_model.fit(iris_data_for_fallback.data, iris_data_for_fallback.target)
+            model = fallback_model
+            st.session_state.model_load_message = f"⚠️ {fnf_err}. Model Naive Bayes default telah dilatih dan digunakan."
+            st.session_state.model_type_loaded = "default_not_found"
+            status_ui.update(label=st.session_state.model_load_message, state="warning", expanded=True)
+
+        except Exception as e:
+            st.write(f"Error saat memuat model: {e}. Melatih model Naive Bayes default sebagai fallback.")
+            fallback_model = GaussianNB()
+            fallback_model.fit(iris_data_for_fallback.data, iris_data_for_fallback.target)
+            model = fallback_model
+            st.session_state.model_load_message = f"❌ Terjadi error: {e}. Model Naive Bayes default telah dilatih dan digunakan."
+            st.session_state.model_type_loaded = "default_error"
+            status_ui.update(label=st.session_state.model_load_message, state="error", expanded=True)
+    return model
 
 # --- Load Data and Model ---
 iris_data_obj, iris_df, feature_names, target_names = load_data_iris()
-# Ganti "model.pkl" jika nama file model Anda berbeda
-model = load_custom_model("model.pkl")
+
+# Panggil fungsi pemuatan model. st.status akan muncul di sini saat pertama kali dijalankan.
+# Status juga disimpan di st.session_state
+model = load_model_with_status("model.pkl")
 
 
 # --- Page 1: Data Description ---
 def page_data_description():
     st.header("📊 Deskripsi Dataset Iris")
+    st.markdown("...") # Konten deskripsi data sama seperti sebelumnya
     st.markdown("""
     Dataset bunga Iris adalah dataset multivariat yang diperkenalkan oleh ahli statistik dan biologi Inggris, Ronald Fisher.
     Ini adalah dataset klasik dalam machine learning dan statistik, sering digunakan untuk menguji algoritma klasifikasi.
@@ -109,11 +128,11 @@ def page_data_description():
         st.pyplot(fig_dist)
         plt.clf()
 
-
 # --- Page 2: Prediction ---
 def page_prediction():
     st.header("🔮 Prediksi Spesies Iris")
     st.markdown("Gunakan slider untuk memasukkan ukuran bunga dan memprediksi spesiesnya.")
+    # ... Konten prediksi sama seperti sebelumnya ...
 
     input_data = {}
     col1, col2 = st.columns(2)
@@ -148,7 +167,7 @@ def page_prediction():
     input_features = np.array([list(input_data.values())])
 
     if st.button("Prediksi Spesies", type="primary", use_container_width=True):
-        if model: # Pastikan model berhasil dimuat
+        if model:
             prediction_id = model.predict(input_features)[0]
             prediction_name = target_names[prediction_id]
             probabilities = model.predict_proba(input_features)[0]
@@ -171,37 +190,43 @@ def page_prediction():
             prob_df = prob_df.sort_values(by='Probabilitas', ascending=False).reset_index(drop=True)
             st.dataframe(prob_df, hide_index=True, use_container_width=True)
         else:
-            st.error("Model tidak tersedia untuk prediksi. Silakan periksa pesan error di sidebar.")
+            st.error("Model tidak tersedia untuk prediksi. Silakan periksa status pemuatan model.")
 
 
 # --- Page 3: About ---
 def page_about():
     st.header("💡 Tentang Aplikasi & Model Ini")
     st.markdown("""
-        Aplikasi web Streamlit ini mendemonstrasikan klasifikasi spesies bunga Iris menggunakan model **Naive Bayes**.
-        
-        ### Fitur Utama:
-        -   **Eksplorasi Data**: Lihat detail, statistik, dan visualisasi dari dataset Iris.
-        -   **Prediksi Real-time**: Masukkan ukuran bunga untuk mendapatkan prediksi spesies instan beserta probabilitasnya.
-        -   **Informasi Model**: Detail dasar tentang model yang digunakan.
+        Aplikasi web Streamlit ini mendemonstrasikan klasifikasi spesies bunga Iris.
     """)
+
+    st.subheader("Status Pemuatan Model")
+    # Tampilkan pesan status dari session_state
+    if st.session_state.model_type_loaded == "custom":
+        st.success(st.session_state.model_load_message)
+    elif st.session_state.model_type_loaded == "default_not_found":
+        st.warning(st.session_state.model_load_message)
+    elif st.session_state.model_type_loaded == "default_error":
+        st.error(st.session_state.model_load_message)
+    else:
+        st.info(st.session_state.model_load_message) # fallback jika status tidak dikenali
 
     if model:
         st.subheader("Informasi Model yang Digunakan")
-        model_name = model.__class__.__name__
-        if "model.pkl" in st.session_state.get("model_load_message", "") and "berhasil dimuat" in st.session_state.get("model_load_message", ""): # Crude check
-             st.info(f"Model yang digunakan adalah model pra-terlatih **{model_name}** yang dimuat dari `model.pkl`.")
+        model_class_name = model.__class__.__name__
+        if st.session_state.model_type_loaded == "custom":
+             st.write(f"Model yang digunakan adalah model kustom **{model_class_name}** yang dimuat dari `model.pkl`.")
         else:
-             st.info(f"Model yang digunakan adalah **{model_name}** yang dilatih secara default oleh aplikasi ini.")
+             st.write(f"Model yang digunakan adalah model default **{model_class_name}** yang dilatih oleh aplikasi ini.")
 
-        st.markdown("Jika Anda ingin menguji performa model yang dimuat pada dataset Iris saat ini:")
-        if st.button("Uji Model pada Data Iris Saat Ini"):
+        st.markdown("Anda dapat menguji performa model yang saat ini dimuat pada dataset Iris bawaan:")
+        if st.button("Uji Akurasi Model Saat Ini"):
             X_all = iris_data_obj.data
             y_all_true = iris_data_obj.target
             try:
                 y_all_pred = model.predict(X_all)
                 acc = accuracy_score(y_all_true, y_all_pred)
-                st.success(f"Akurasi model yang dimuat pada dataset Iris saat ini: **{acc*100:.2f}%**")
+                st.metric(label="Akurasi pada Dataset Iris (Full)", value=f"{acc*100:.2f}%")
             except Exception as e:
                 st.error(f"Tidak dapat mengevaluasi model: {e}")
     else:
@@ -210,7 +235,6 @@ def page_about():
 
     st.markdown("---")
     st.markdown("Dibuat dengan ❤️ menggunakan Python, Streamlit, Scikit-learn, Pandas, Matplotlib, dan Seaborn.")
-    st.markdown("Dikembangkan sebagai demonstrasi untuk klasifikasi Iris.")
 
 
 # --- Main App Logic with Sidebar Navigation ---
@@ -222,14 +246,6 @@ def main():
         "💡 Tentang": page_about
     }
     selection = st.sidebar.radio("Pindah ke halaman:", list(page_options.keys()))
-
-    # Simpan pesan status pemuatan model untuk referensi di halaman 'Tentang'
-    # Ini adalah cara sederhana; state management yang lebih canggih bisa digunakan
-    if 'model_load_message' not in st.session_state:
-        st.session_state.model_load_message = ""
-    # Cek pesan dari sidebar (jika ada)
-    # Ini agak rumit karena pesan sidebar tidak langsung masuk ke session state
-    # Cara yang lebih baik adalah jika load_custom_model mengembalikan status juga
 
     page_function = page_options[selection]
     page_function()

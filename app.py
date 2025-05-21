@@ -32,7 +32,7 @@ def load_data_iris():
 @st.cache_resource
 def load_model_with_status(model_path="naive_bayes_model.pkl"):
     """Loads a pre-trained model or falls back to a default one, using st.status for UI."""
-    model = load_model_with_status("naive_bayes_model.pkl")
+    model = None
     iris_data_for_fallback, _, _, _ = load_data_iris() # Muat data jika butuh fallback
 
     # Inisialisasi session state jika belum ada
